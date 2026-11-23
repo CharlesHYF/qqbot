@@ -1,0 +1,25 @@
+# Cloudflare Worker 部署配置
+# 创建日期：2026-11-23
+# 修改日期：2026-11-23
+name = "qqbot"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# 非密钥配置；QQ_APP_SECRET 与 LLM_API_KEY 用 wrangler secret put 写入
+[vars]
+QQ_APP_ID = ""
+LLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+LLM_MODEL = "glm-4-flash-250414"
+
+# 部署和本地启动前生成 Wiki 数据
+[build]
+command = "node scripts/build-wiki.mjs"
+
+# wiki/media 下的图片和视频以静态资源发布，QQ 通过 URL 拉取
+[assets]
+directory = "./wiki/media"
+
+# 消息去重；id 用 pnpm exec wrangler kv namespace create DEDUP_KV 创建后填入
+[[kv_namespaces]]
+binding = "DEDUP_KV"
+id = "replace-with-dedup-kv-id"

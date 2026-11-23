@@ -1,0 +1,22 @@
+{
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": true,
+  "singleAttributePerLine": true,
+  "htmlWhitespaceSensitivity": "ignore",
+  "vueIndentScriptAndStyle": false,
+  "bracketSameLine": false,
+  "endOfLine": "lf",
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc", "*.yml", "*.yaml"],
+      "options": {
+        "useTabs": false,
+        "tabWidth": 2
+      }
+    }
+  ]
+}
