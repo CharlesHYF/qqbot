@@ -1,9 +1,10 @@
 /**
- * 抓取狼队公告接口并生成 Wiki 更新日志页面
+ * 抓取狼队公告并生成 Wiki 更新日志页面
  * 创建日期：2026-11-23
  * 修改日期：2026-11-23
  */
-import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,13 +12,11 @@ const ANNOUNCEMENT_URL = "https://wolfteam.ymbc.net/api/announcements";
 
 const TIME_ZONE = "Asia/Shanghai";
 
-const OUTPUT_PATH = join(
-	dirname(fileURLToPath(import.meta.url)),
-	"..",
-	"wiki",
-	"pages",
-	"announcements.md",
-);
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+const CACHE_PATH = join(PROJECT_ROOT, "data", "announcements.json");
+
+const OUTPUT_PATH = join(PROJECT_ROOT, "wiki", "pages", "announcements.md");
 
 function formatDate(publishedAt) {
 	const formatter = new Intl.DateTimeFormat("zh-CN", {
@@ -79,7 +78,7 @@ function buildMarkdown(announcements) {
 	return markdown;
 }
 
-async function main() {
+async function fetchFromWeb() {
 	const response = await fetch(ANNOUNCEMENT_URL);
 
 	if (!response.ok) {
@@ -92,9 +91,49 @@ async function main() {
 		throw new Error("公告接口没有返回任何条目");
 	}
 
+	await mkdir(dirname(CACHE_PATH), { recursive: true });
+	await writeFile(CACHE_PATH, JSON.stringify(announcements, null, 2), "utf8");
+
+	return announcements;
+}
+
+async function readFromCache() {
+	if (!existsSync(CACHE_PATH)) {
+		return null;
+	}
+
+	const text = await readFile(CACHE_PATH, "utf8");
+	const announcements = JSON.parse(text);
+
+	if (!Array.isArray(announcements) || announcements.length === 0) {
+		return null;
+	}
+
+	return announcements;
+}
+
+async function main() {
+	let announcements = null;
+	let source = "web";
+
+	try {
+		announcements = await fetchFromWeb();
+	} catch (error) {
+		console.warn(`从 web 获取公告失败，改用本地缓存：${error.message}`);
+	}
+
+	if (announcements === null) {
+		announcements = await readFromCache();
+		source = "local";
+	}
+
+	if (announcements === null) {
+		throw new Error("web 与本地缓存都没有可用的公告");
+	}
+
 	await writeFile(OUTPUT_PATH, buildMarkdown(announcements), "utf8");
 
-	console.log(`已写入 ${announcements.length} 条公告到 ${OUTPUT_PATH}`);
+	console.log(`已写入 ${announcements.length} 条公告到 ${OUTPUT_PATH}，来源：${source}`);
 }
 
 main().catch((error) => {
