@@ -176,14 +176,14 @@ describe("parsePageSelection", () => {
 	it("文件名含连字符时能完整匹配", () => {
 		const hyphenStore = createWikiStore(
 			{
-				"index.md": "- [手冲咖啡基础](pour-over-basics.md) -- 冲煮参数",
-				"pour-over-basics.md": "粉水比 1:15。",
+				"index.md": "- [账号登录问题](account-login.md) -- 登录排查",
+				"account-login.md": "登录失败先核对账号和密码。",
 			},
 			[],
 		);
 
-		expect(parsePageSelection("pour-over-basics.md", hyphenStore)).toEqual([
-			"pour-over-basics.md",
+		expect(parsePageSelection("account-login.md", hyphenStore)).toEqual([
+			"account-login.md",
 		]);
 	});
 });

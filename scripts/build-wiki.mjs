@@ -24,7 +24,15 @@ const DATE_LENGTH = 10;
 const JSON_INDENT = "\t";
 
 async function listFileNames(directory, namePattern) {
-	const entries = await readdir(directory, { withFileTypes: true });
+	let entries;
+
+	try {
+		entries = await readdir(directory, { withFileTypes: true });
+	} catch {
+		// 目录可以不存在，例如删空 wiki/media 之后
+		return [];
+	}
+
 	const fileNames = [];
 
 	for (const entry of entries) {

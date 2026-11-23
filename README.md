@@ -104,7 +104,7 @@ wiki/
 - When you add or remove a page, update `index.md`; the bot can only find pages listed there.
 - Run `make deploy` after editing the wiki. The build step `scripts/build-wiki.mjs` bundles the pages into the Worker.
 
-The repository ships a small demo wiki about pour-over coffee with one image and one mp4.
+The repository ships a wiki with WolfTeam server Q&A pages.
 
 ## Configuration
 

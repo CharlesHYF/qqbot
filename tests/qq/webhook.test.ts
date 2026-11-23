@@ -154,7 +154,7 @@ describe("handleWebhookRequest", () => {
 			d: {
 				id: "msg-1",
 				group_openid: "group-1",
-				content: " 怎么手冲",
+				content: " 登录失败怎么办",
 			},
 		});
 
@@ -168,7 +168,7 @@ describe("handleWebhookRequest", () => {
 			{
 				messageId: "msg-1",
 				groupOpenid: "group-1",
-				content: " 怎么手冲",
+				content: " 登录失败怎么办",
 				imageUrls: [],
 			},
 		]);

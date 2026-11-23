@@ -104,7 +104,7 @@ wiki/
 - 新增或删除页面时同步更新 `index.md`，机器人只能找到目录里列出的页面。
 - 修改 Wiki 后执行 `make deploy`，构建步骤 `scripts/build-wiki.mjs` 会把页面打包进 Worker。
 
-仓库自带一个手冲咖啡主题的 demo Wiki，包含 1 张图片和 1 段 mp4。
+仓库自带的 Wiki 是狼队服务器问答资料，按页面列出可回答的问题范围。
 
 ## 配置项
 
