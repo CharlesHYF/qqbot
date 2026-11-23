@@ -73,6 +73,13 @@ export default {
 	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
 
+		logger.info("收到 Worker 请求", {
+			method: request.method,
+			path: url.pathname,
+			userAgent: request.headers.get("User-Agent") ?? "",
+			botAppId: request.headers.get("X-Bot-Appid") ?? "",
+		});
+
 		if (request.method !== "POST" || url.pathname !== WEBHOOK_PATH) {
 			return new Response(null, { status: HTTP_STATUS_NOT_FOUND });
 		}
