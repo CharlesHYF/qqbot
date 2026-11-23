@@ -48,6 +48,28 @@ describe("handleWebhookRequest", () => {
 		expect(response.status).toBe(401);
 	});
 
+	it("无签名的群消息返回 401 且不分发", async () => {
+		const questions: GroupQuestion[] = [];
+		const body = JSON.stringify({
+			op: 0,
+			t: "GROUP_AT_MESSAGE_CREATE",
+			d: {
+				id: "msg-1",
+				group_openid: "group-1",
+				content: "测试",
+			},
+		});
+		const request = new Request("https://bot.example.com/webhook", {
+			method: "POST",
+			body,
+		});
+
+		const response = await handleWebhookRequest(request, createOptions(questions));
+
+		expect(response.status).toBe(401);
+		expect(questions).toHaveLength(0);
+	});
+
 	it("用其他密钥签名时返回 401", async () => {
 		const request = await buildSignedRequest(JSON.stringify({ op: 0, d: {} }), "wrong-secret");
 
@@ -73,6 +95,47 @@ describe("handleWebhookRequest", () => {
 		await expect(
 			verifyText(APP_SECRET, result.signature, "1725442341Arq0D5A61EgUu4OxUvOp"),
 		).resolves.toBe(true);
+	});
+
+	it("无签名头的地址验证返回签名且不分发消息", async () => {
+		const questions: GroupQuestion[] = [];
+		const body = JSON.stringify({
+			op: 13,
+			d: {
+				plain_token: "token",
+				event_ts: TIMESTAMP,
+			},
+		});
+		const request = new Request("https://bot.example.com/webhook", {
+			method: "POST",
+			body,
+		});
+
+		const response = await handleWebhookRequest(request, createOptions(questions));
+		const result: { plain_token: string; signature: string } = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(result.plain_token).toBe("token");
+		await expect(verifyText(APP_SECRET, result.signature, `${TIMESTAMP}token`)).resolves.toBe(true);
+		expect(questions).toHaveLength(0);
+	});
+
+	it("地址验证拒绝包含对象起始符的签名内容", async () => {
+		const body = JSON.stringify({
+			op: 13,
+			d: {
+				plain_token: "invalid{token",
+				event_ts: TIMESTAMP,
+			},
+		});
+		const request = new Request("https://bot.example.com/webhook", {
+			method: "POST",
+			body,
+		});
+
+		const response = await handleWebhookRequest(request, createOptions([]));
+
+		expect(response.status).toBe(400);
 	});
 
 	it("地址验证缺少 plain_token 时返回 400", async () => {

@@ -7,7 +7,7 @@
 
 ## 回调接收
 ### 功能描述
-QQ 开放平台把事件推送到 `POST /webhook`。Worker 先用 Ed25519 校验签名，签名不通过返回 401。
+QQ 开放平台把事件推送到 `POST /webhook`。Worker 对普通事件使用 Ed25519 校验签名，签名不通过返回 401；地址验证请求无需签名请求头。
 - op 13（回调地址验证）：用 AppSecret 派生的私钥对 `event_ts + plain_token` 签名后返回。
 - op 0 且事件为 `GROUP_AT_MESSAGE_CREATE`：立即返回 ACK（op 12），用 `ctx.waitUntil` 异步回答。
 - 其他事件：返回 ACK，不处理。
@@ -19,7 +19,7 @@ QQ 开放平台把事件推送到 `POST /webhook`。Worker 先用 Ed25519 校验
 | ------ | ---------------------- |
 | method | POST                   |
 | path   | /webhook               |
-| 权限   | Ed25519 签名校验       |
+| 权限   | 普通事件使用 Ed25519 签名校验；地址验证无需签名请求头 |
 
 ### 入参要求
 | 参数名 | 类型   | 必填 | 校验规则        | 说明                  |

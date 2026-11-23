@@ -69,11 +69,14 @@ async function buildValidationResponse(
 	const plainToken = readText(data, "plain_token");
 	const eventTs = readText(data, "event_ts");
 
-	if (plainToken === "" || eventTs === "") {
+	const validationText = `${eventTs}${plainToken}`;
+
+	// 防止地址验证为包含 JSON 对象的事件内容生成签名
+	if (plainToken === "" || eventTs === "" || validationText.includes("{")) {
 		return new Response(null, { status: HTTP_STATUS_BAD_REQUEST });
 	}
 
-	const signature = await signText(appSecret, `${eventTs}${plainToken}`);
+	const signature = await signText(appSecret, validationText);
 
 	return jsonResponse({
 		plain_token: plainToken,
@@ -101,6 +104,16 @@ export async function handleWebhookRequest(
 	options: WebhookOptions,
 ): Promise<Response> {
 	const rawBody = await request.text();
+	const payload = parsePayload(rawBody);
+
+	if (
+		payload?.op === OP_CALLBACK_VALIDATION &&
+		typeof payload.d === "object" &&
+		payload.d !== null
+	) {
+		return buildValidationResponse(options.appSecret, payload.d);
+	}
+
 	const signatureHex = request.headers.get(SIGNATURE_HEADER) ?? "";
 	const timestamp = request.headers.get(TIMESTAMP_HEADER) ?? "";
 	const isSignatureValid =
@@ -112,14 +125,8 @@ export async function handleWebhookRequest(
 		return new Response(null, { status: HTTP_STATUS_UNAUTHORIZED });
 	}
 
-	const payload = parsePayload(rawBody);
-
 	if (payload === null || typeof payload.d !== "object" || payload.d === null) {
 		return new Response(null, { status: HTTP_STATUS_BAD_REQUEST });
-	}
-
-	if (payload.op === OP_CALLBACK_VALIDATION) {
-		return buildValidationResponse(options.appSecret, payload.d);
 	}
 
 	if (payload.op === OP_DISPATCH && payload.t === EVENT_GROUP_AT_MESSAGE) {

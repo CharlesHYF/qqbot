@@ -39,7 +39,7 @@
 - **Karpathy LLM Wiki layout**: read-only sources in `wiki/raw/`, maintained pages in `wiki/pages/`, a page catalog in `index.md` and an append-only `log.md`. Because pages are chosen from the index, the prompt size does not grow with the wiki.
 - **Text, image and mp4 replies**: images (png/jpg) and videos (mp4) in `wiki/media/` are published as Worker static assets. A reply sends the text first, then up to 4 media files, which fits the 5 passive replies QQ allows per message. Only files referenced by the chosen pages can be sent.
 - **Zero cost, no server**: runs on the Cloudflare Workers free plan and the free GLM-4-Flash model. Paid web search is intentionally not used.
-- **Verified callbacks**: every callback is checked with Ed25519 using a key derived from the AppSecret, matching the official botgo SDK and the documented test vectors. Repeated deliveries of the same message are skipped through Workers KV.
+- **Verified callbacks**: incoming events are checked with Ed25519 using a key derived from the AppSecret, matching the official botgo SDK and the documented test vectors. Repeated deliveries of the same message are skipped through Workers KV.
 - **Graceful failures**: a model error replies "please try again later"; a failed media upload is logged and skipped without affecting the text answer.
 
 ## How It Works
@@ -146,7 +146,7 @@ Coding standards and commit rules are in [AGENTS.md](AGENTS.md).
 ## Known Limitations
 
 - Not yet verified in a real QQ group: whether text and media can share one message, whether media replies count toward the 5 passive replies, media size limits, and whether QQ can fetch files from a `workers.dev` domain.
-- Callback URL validation (op 13) requires a signature, following the official botgo SDK. The documentation example shows no signature headers; if validation fails when you save the callback URL, check this first.
+- Callback URL validation (op 13) accepts the unsigned challenge documented by QQ and returns a signed response.
 - Staying inside the wiki is enforced by the prompt and by page selection; a model can still occasionally phrase things beyond the source text.
 - A personal developer bot cannot be listed publicly and can only join groups you own or manage.
 
