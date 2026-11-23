@@ -17,8 +17,7 @@ export const FAILURE_TEXT = "暂时无法回答，请稍后再试。";
 
 export const USAGE_TEXT = "请 @我 并输入你的问题，我会根据知识库内容回答。";
 
-export const GREETING_TEXT =
-	"你好，我是狼队问答助手。直接 @我 加你的问题就行，我会根据游戏资料回答。";
+export const GREETING_TEXT = "我是狼队问答助手，可以回答这些方面：";
 
 export const VAGUE_QUESTION_TEXT =
 	"请描述一下具体现象，比如登录时报什么提示、在哪个界面出的问题。";
@@ -45,7 +44,7 @@ const ONLINE_QUERY_MAX_LENGTH = 12;
 
 const ROOM_NUMBER_WIDTH = 3;
 
-// 问候与功能询问的关键词，命中后直接回复引导文案，不走知识库检索
+// 问候与功能询问的关键词，命中后直接回复功能清单，不走知识库检索
 const CHAT_ENTRY_KEYWORDS = [
 	"你好",
 	"您好",
@@ -53,11 +52,19 @@ const CHAT_ENTRY_KEYWORDS = [
 	"hello",
 	"在吗",
 	"在么",
+	"会做什么",
 	"能做什么",
 	"会什么",
+	"能做哪些",
+	"可以做什么",
+	"有哪些功能",
+	"有什么功能",
+	"哪些功能",
+	"能干嘛",
+	"能干什么",
 	"怎么用",
 	"怎么问",
-	"有什么功能",
+	"使用说明",
 	"帮助",
 	"help",
 ];
@@ -259,6 +266,20 @@ function parseIndexEntries(index: string): IndexEntry[] {
 	}
 
 	return entries;
+}
+
+export function buildHelpText(wikiStore: WikiStore): string {
+	const lines = [GREETING_TEXT];
+
+	for (const entry of parseIndexEntries(wikiStore.getIndex())) {
+		if (entry.title !== "") {
+			lines.push(`- ${entry.title}`);
+		}
+	}
+
+	lines.push("直接 @我 加你的问题就行。");
+
+	return lines.join("\n");
 }
 
 // 目录改成 文件名: 摘要 的形式，避免模型把方括号里的页面标题当成文件名
@@ -569,7 +590,7 @@ export async function replyGroupQuestion(
 			question.groupOpenid,
 			question.messageId,
 			FIRST_MSG_SEQ,
-			GREETING_TEXT,
+			buildHelpText(deps.wikiStore),
 		);
 
 		return;

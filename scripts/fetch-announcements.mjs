@@ -18,6 +18,8 @@ const CACHE_PATH = join(PROJECT_ROOT, "data", "announcements.json");
 
 const OUTPUT_PATH = join(PROJECT_ROOT, "wiki", "pages", "announcements.md");
 
+const JSON_INDENT = 2;
+
 function formatDate(publishedAt) {
 	const formatter = new Intl.DateTimeFormat("zh-CN", {
 		timeZone: TIME_ZONE,
@@ -92,7 +94,7 @@ async function fetchFromWeb() {
 	}
 
 	await mkdir(dirname(CACHE_PATH), { recursive: true });
-	await writeFile(CACHE_PATH, JSON.stringify(announcements, null, 2), "utf8");
+	await writeFile(CACHE_PATH, JSON.stringify(announcements, null, JSON_INDENT), "utf8");
 
 	return announcements;
 }

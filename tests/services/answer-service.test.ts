@@ -7,12 +7,12 @@ import { describe, expect, it } from "vitest";
 
 import { LlmRequestError } from "../../src/errors";
 import {
+	buildHelpText,
 	buildIndexListing,
 	buildMaterial,
 	cleanQuestion,
 	FAILURE_TEXT,
 	getMediaFileType,
-	GREETING_TEXT,
 	parseAnswer,
 	parsePageSelection,
 	REFUSAL_TEXT,
@@ -28,10 +28,10 @@ import type { MediaFileType } from "../../src/qq/qq-api";
 import type { GroupReplier } from "../../src/services/answer-service";
 
 const PAGES = {
-	"index.md": "- [基础](basics.md) -- 冲煮参数\n- [器具](equipment.md) -- 器具清单",
+	"index.md": "- [基础](basics.md) -- 登录排查\n- [器具](equipment.md) -- 器具清单",
 	"log.md": "## [2026-11-23] ingest | 示例",
 	"basics.md":
-		"粉水比 1:15。\n![步骤](../media/steps.png)\n[视频](../media/demo.mp4)\n![文件](../media/notes.gif)",
+		"登录失败先核对账号密码。\n![步骤](../media/steps.png)\n[视频](../media/demo.mp4)\n![文件](../media/notes.gif)",
 	"equipment.md": "滤杯、滤纸。",
 	"extra.md": "额外页面。",
 };
@@ -138,7 +138,7 @@ const wikiStore = createWikiStore(PAGES, MEDIA_FILES);
 const QUESTION = {
 	messageId: "msg-1",
 	groupOpenid: "group-1",
-	content: " 粉水比是多少",
+	content: " 登录失败怎么办",
 	imageUrls: [],
 };
 
@@ -190,7 +190,7 @@ describe("parsePageSelection", () => {
 
 describe("buildIndexListing", () => {
 	it("把目录链接改成文件名加摘要", () => {
-		expect(buildIndexListing(PAGES["index.md"])).toBe("basics.md: 冲煮参数\nequipment.md: 器具清单");
+		expect(buildIndexListing(PAGES["index.md"])).toBe("basics.md: 登录排查\nequipment.md: 器具清单");
 	});
 
 	it("目录无法解析时原样返回", () => {
@@ -202,7 +202,7 @@ describe("buildMaterial", () => {
 	it("按页面拼接资料并带页面名", () => {
 		const material = buildMaterial(["basics.md", "equipment.md"], wikiStore);
 
-		expect(material).toContain("=== basics.md ===\n粉水比 1:15。");
+		expect(material).toContain("=== basics.md ===\n登录失败先核对账号密码。");
 		expect(material).toContain("=== equipment.md ===\n滤杯、滤纸。");
 	});
 
@@ -230,12 +230,12 @@ describe("parseAnswer", () => {
 
 	it("提取允许的媒体标记并从文本中去掉标记和图片语法", () => {
 		const answer = parseAnswer(
-			"粉水比 1:15。\n![x](../media/steps.png)\n[[media:steps.png]]\n[[media:hack.png]]",
+			"登录失败先核对账号密码。\n![x](../media/steps.png)\n[[media:steps.png]]\n[[media:hack.png]]",
 			["steps.png"],
 		);
 
 		expect(answer).toEqual({
-			text: "粉水比 1:15。",
+			text: "登录失败先核对账号密码。",
 			mediaFiles: ["steps.png"],
 		});
 	});
@@ -254,7 +254,7 @@ describe("parseAnswer", () => {
 
 	it("模型照抄资料里的媒体链接时提取媒体并去掉链接", () => {
 		const answer = parseAnswer(
-			"步骤见图：\n![冲煮步骤示意图](../media/steps.png)\n[注水演示视频](../media/demo.mp4)",
+			"步骤见图：\n![步骤示意图](../media/steps.png)\n[演示视频](../media/demo.mp4)",
 			["steps.png", "demo.mp4"],
 		);
 
@@ -288,10 +288,10 @@ describe("replyGroupQuestion", () => {
 		await replyGroupQuestion({ ...QUESTION, content: "你好" }, buildDeps(chatClient, replier));
 
 		expect(chatClient.requests).toHaveLength(0);
-		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: GREETING_TEXT }]);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: buildHelpText(wikiStore) }]);
 	});
 
-	it("询问功能时直接回复引导文案且不调用模型", async () => {
+	it("询问有哪些功能时回复功能清单", async () => {
 		const chatClient = new FakeChatClient([]);
 		const replier = new FakeReplier();
 
@@ -301,7 +301,33 @@ describe("replyGroupQuestion", () => {
 		);
 
 		expect(chatClient.requests).toHaveLength(0);
-		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: GREETING_TEXT }]);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: buildHelpText(wikiStore) }]);
+	});
+
+	it("问你会做什么时回复功能清单", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "你会做什么" },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(chatClient.requests).toHaveLength(0);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: buildHelpText(wikiStore) }]);
+	});
+
+	it("问你有哪些功能时回复功能清单", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "你有哪些功能" },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(chatClient.requests).toHaveLength(0);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: buildHelpText(wikiStore) }]);
 	});
 
 	it("问题为空时回复使用说明且不调用模型", async () => {
@@ -324,7 +350,7 @@ describe("replyGroupQuestion", () => {
 		);
 
 		expect(chatClient.requests).toHaveLength(1);
-		expect(chatClient.requests[0][0].content).toContain("basics.md: 冲煮参数");
+		expect(chatClient.requests[0][0].content).toContain("basics.md: 登录排查");
 		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: REFUSAL_TEXT }]);
 	});
 
@@ -351,7 +377,7 @@ describe("replyGroupQuestion", () => {
 
 	it("带图片时先识别图片并把内容并入检索问题", async () => {
 		const chatClient = new FakeChatClient(
-			["basics.md", "粉水比 1:15。"],
+			["basics.md", "登录失败先核对账号密码。"],
 			"图片是一个登录错误弹窗，提示不合格的账号",
 		);
 		const replier = new FakeReplier();
@@ -478,7 +504,7 @@ describe("replyGroupQuestion", () => {
 	it("先发文字再逐个发媒体，msg_seq 递增，作答提示词只含选中页面资料", async () => {
 		const chatClient = new FakeChatClient([
 			"basics.md",
-			"粉水比 1:15。\n[[media:steps.png]]\n[[media:demo.mp4]]",
+			"登录失败先核对账号密码。\n[[media:steps.png]]\n[[media:demo.mp4]]",
 		]);
 		const replier = new FakeReplier();
 
@@ -488,9 +514,9 @@ describe("replyGroupQuestion", () => {
 		expect(answerPrompt).toContain("=== basics.md ===");
 		expect(answerPrompt).not.toContain("滤杯");
 		expect(answerPrompt).toContain("可用文件：steps.png、notes.gif、demo.mp4");
-		expect(chatClient.requests[1][1]).toEqual({ role: "user", content: "粉水比是多少" });
+		expect(chatClient.requests[1][1]).toEqual({ role: "user", content: "登录失败怎么办" });
 		expect(replier.calls).toEqual([
-			{ kind: "text", msgSeq: 1, content: "粉水比 1:15。" },
+			{ kind: "text", msgSeq: 1, content: "登录失败先核对账号密码。" },
 			{ kind: "upload", fileType: 1, fileUrl: "https://bot.example.com/steps.png" },
 			{ kind: "media", msgSeq: 2, fileInfo: "info:https://bot.example.com/steps.png" },
 			{ kind: "upload", fileType: 2, fileUrl: "https://bot.example.com/demo.mp4" },
