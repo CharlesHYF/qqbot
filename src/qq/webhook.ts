@@ -3,6 +3,7 @@
  * 创建日期：2026-11-23
  * 修改日期：2026-11-23
  */
+import { createLogger } from "../logger";
 import { signText, verifyText } from "./signature";
 
 import type { GroupQuestion } from "../services/answer-service";
@@ -22,6 +23,12 @@ const HTTP_STATUS_UNAUTHORIZED = 401;
 const SIGNATURE_HEADER = "X-Signature-Ed25519";
 
 const TIMESTAMP_HEADER = "X-Signature-Timestamp";
+
+const USER_AGENT_HEADER = "User-Agent";
+
+const BOT_APP_ID_HEADER = "X-Bot-Appid";
+
+const logger = createLogger("qq-webhook");
 
 interface CallbackPayload {
 	op?: number;
@@ -60,6 +67,14 @@ function readText(data: Record<string, unknown>, key: string): string {
 	const value = data[key];
 
 	return typeof value === "string" ? value : "";
+}
+
+// 记录请求来源，用于区分平台回调与手工探测
+function describeRequestOrigin(request: Request): Record<string, unknown> {
+	return {
+		userAgent: request.headers.get(USER_AGENT_HEADER) ?? "",
+		botAppId: request.headers.get(BOT_APP_ID_HEADER) ?? "",
+	};
 }
 
 async function buildValidationResponse(
@@ -111,7 +126,16 @@ export async function handleWebhookRequest(
 		typeof payload.d === "object" &&
 		payload.d !== null
 	) {
-		return buildValidationResponse(options.appSecret, payload.d);
+		const validationResponse = await buildValidationResponse(options.appSecret, payload.d);
+
+		logger.info("处理回调地址验证请求", {
+			...describeRequestOrigin(request),
+			plainTokenLength: readText(payload.d, "plain_token").length,
+			eventTsLength: readText(payload.d, "event_ts").length,
+			status: validationResponse.status,
+		});
+
+		return validationResponse;
 	}
 
 	const signatureHex = request.headers.get(SIGNATURE_HEADER) ?? "";
@@ -122,6 +146,13 @@ export async function handleWebhookRequest(
 		(await verifyText(options.appSecret, signatureHex, `${timestamp}${rawBody}`));
 
 	if (!isSignatureValid) {
+		logger.warn("回调签名校验失败", {
+			...describeRequestOrigin(request),
+			op: payload?.op ?? null,
+			hasSignatureHeader: signatureHex !== "",
+			hasTimestampHeader: timestamp !== "",
+		});
+
 		return new Response(null, { status: HTTP_STATUS_UNAUTHORIZED });
 	}
 

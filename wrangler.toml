@@ -23,3 +23,15 @@ directory = "./wiki/media"
 [[kv_namespaces]]
 binding = "DEDUP_KV"
 id = "replace-with-dedup-kv-id"
+
+# 记录回调请求与验证结果，便于排查平台地址校验失败
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
