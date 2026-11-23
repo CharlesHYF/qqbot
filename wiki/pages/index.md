@@ -1,4 +1,5 @@
 # 页面目录
-- [手冲咖啡基础](pour-over-basics.md) -- 粉水比、水温、研磨度和冲煮步骤，附步骤图和演示视频
-- [口味问题排查](taste-troubleshooting.md) -- 咖啡太酸或太苦时如何调整
-- [器具清单](equipment.md) -- 入门手冲需要准备的器具
+
+- [账号登录问题](account-login.md) -- 登录提示不合格的账号如何排查，以及忘记密码怎么办
+- [客户端下载与版本](client-download.md) -- 安装包下载地址、版本号查看方式和玩家交流群
+- [更新日志](announcements.md) -- 最近的版本更新内容与问题修复

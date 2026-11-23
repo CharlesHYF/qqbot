@@ -1,3 +1,7 @@
 # 维护记录
-## [2026-11-23] ingest | 手冲咖啡笔记
-根据 raw/pour-over-notes.md 创建 pour-over-basics.md、taste-troubleshooting.md、equipment.md。
+
+## [2026-11-23] replace | 切换为狼队游戏知识库
+
+删除手冲咖啡示例页面，新增 account-login.md、client-download.md、announcements.md。
+
+资料来源：https://wolfteam.ymbc.net/ 及其公告接口 https://wolfteam.ymbc.net/api/announcements。

@@ -13,7 +13,8 @@
     "lint": "node scripts/build-wiki.mjs && eslint .",
     "format": "prettier --write .",
     "test": "node scripts/build-wiki.mjs && vitest run",
-    "build:wiki": "node scripts/build-wiki.mjs"
+    "build:wiki": "node scripts/build-wiki.mjs",
+    "fetch:announcements": "node scripts/fetch-announcements.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261108.1",

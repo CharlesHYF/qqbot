@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help setup verify verify-all lint lint-all check test author commit push rebase
-.PHONY: dev deploy
+.PHONY: dev deploy announcements
 
 COMMAND_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
@@ -36,6 +36,10 @@ commit: ## 暂存并提交修改
 rebase: ## 将当前分支变基合入 main
 push: ## 推送本地 main 到远程 main
 	git push origin main:main
+
+# ---------------------- Wiki ----------------------
+announcements: ## 抓取狼队公告并更新 Wiki 更新日志页面
+	node scripts/fetch-announcements.mjs
 
 # ---------------------- Workers ----------------------
 dev: ## 本地启动 Worker（读取 .dev.vars）
