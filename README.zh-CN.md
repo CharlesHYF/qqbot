@@ -68,12 +68,26 @@ QQ 群                 QQ 开放平台              Cloudflare Worker           
 
 ### 本地运行
 
+本地调试时 QQ 平台要能访问到回调地址，`localhost` 公网不可达，需要先用隧道把端口暴露出去。
+
 ```bash
 pnpm install
-make setup                       # 安装 pre-push 钩子
 cp .dev.vars.example .dev.vars   # 填写 QQ_APP_ID / QQ_APP_SECRET / LLM_API_KEY
-make dev                         # 回调地址：http://localhost:8787/webhook
+pnpm dev                         # 启动 Worker，监听 8787
+
+# 另开一个终端
+ngrok http 8787                  # 记下输出的 https 地址
 ```
+
+然后在 QQ 开放平台把回调地址设为 `https://<隧道地址>/webhook`，并订阅群 @ 消息事件，保存时平台会发起一次校验。
+
+ngrok 首次使用需要先配置 authtoken：
+
+```bash
+ngrok config add-authtoken <你的 authtoken>
+```
+
+配置文件默认位于 `%LOCALAPPDATA%\ngrok\ngrok.yml`（Windows）或 `~/.config/ngrok/ngrok.yml`。免费版的隧道域名每次重启都会变，换域名后要回平台更新回调地址。
 
 ### 部署
 
@@ -145,10 +159,12 @@ test_cases/                   测试用例文档
 
 ## 已知限制
 
-- 以下几点尚未在真实 QQ 群验证：文字和媒体能否放在同一条消息、富媒体是否计入 5 次被动回复、媒体大小上限、QQ 能否拉取 `workers.dev` 域名下的文件。
+- `workers.dev` 域名在中国大陆网络下常无法访问，QQ 平台的回调校验会直接失败。需要换成国内可达的域名，或按本地运行一节用隧道调试。
+- 以下几点尚未在真实 QQ 群验证：文字和媒体能否放在同一条消息、富媒体是否计入 5 次被动回复、媒体大小上限。
 - 回调地址验证（op 13）接收 QQ 文档示例中的无签名请求，并返回签名结果。
 - 只按 Wiki 回答靠提示词和选页约束，模型仍可能偶尔超出原文表述。
 - 个人主体机器人不能公开上架，只能加入自己是群主或管理员的群。
+- 只响应群内 @ 消息；群内全量消息需要平台开启 接收所有消息 功能并额外处理 `GROUP_MESSAGE_CREATE` 事件。
 
 ## 许可
 

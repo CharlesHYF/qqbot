@@ -68,12 +68,26 @@ QQ group              QQ Open Platform         Cloudflare Worker                
 
 ### Run Locally
 
+The QQ platform has to reach your callback URL, and `localhost` is not publicly reachable, so expose the port through a tunnel first.
+
 ```bash
 pnpm install
-make setup                       # install the pre-push hook
 cp .dev.vars.example .dev.vars   # fill in QQ_APP_ID / QQ_APP_SECRET / LLM_API_KEY
-make dev                         # callback URL: http://localhost:8787/webhook
+pnpm dev                         # starts the Worker on 8787
+
+# in a second terminal
+ngrok http 8787                  # note the https URL it prints
 ```
+
+Then set the callback URL on the QQ Open Platform to `https://<tunnel-url>/webhook`, subscribe to group @ message events, and save; the platform runs one verification call at that point.
+
+Configure the ngrok token once before the first run:
+
+```bash
+ngrok config add-authtoken <your authtoken>
+```
+
+The config file lives at `%LOCALAPPDATA%\ngrok\ngrok.yml` on Windows and `~/.config/ngrok/ngrok.yml` elsewhere. The free plan rotates the tunnel domain on every restart, so update the callback URL afterwards.
 
 ### Deploy
 
@@ -145,10 +159,12 @@ Coding standards and commit rules are in [AGENTS.md](AGENTS.md).
 
 ## Known Limitations
 
-- Not yet verified in a real QQ group: whether text and media can share one message, whether media replies count toward the 5 passive replies, media size limits, and whether QQ can fetch files from a `workers.dev` domain.
+- `workers.dev` domains are often unreachable from mainland China, so the QQ callback validation fails outright. Use a domestically reachable domain, or debug through a tunnel as described in Run Locally.
+- Not yet verified in a real QQ group: whether text and media can share one message, whether media replies count toward the 5 passive replies, and media size limits.
 - Callback URL validation (op 13) accepts the unsigned challenge documented by QQ and returns a signed response.
 - Staying inside the wiki is enforced by the prompt and by page selection; a model can still occasionally phrase things beyond the source text.
 - A personal developer bot cannot be listed publicly and can only join groups you own or manage.
+- Only group @ messages are handled; full group traffic needs the "receive all messages" switch plus `GROUP_MESSAGE_CREATE` handling.
 
 ## License
 
