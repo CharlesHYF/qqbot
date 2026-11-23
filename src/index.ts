@@ -12,9 +12,11 @@ import { replyGroupQuestion } from "./services/answer-service";
 import { createWikiStore } from "./wiki/wiki-store";
 
 import type { AppConfig, Env } from "./config";
-import type { GroupQuestion } from "./services/answer-service";
+import type { GroupQuestion, OnlinePlayer } from "./services/answer-service";
 
 const WEBHOOK_PATH = "/webhook";
+
+const ONLINE_PLAYERS_URL = "https://wolfteam.ymbc.net/api/online-players";
 
 const HTTP_STATUS_NOT_FOUND = 404;
 
@@ -41,6 +43,22 @@ async function isDuplicateMessage(kv: KVNamespace, messageId: string): Promise<b
 	return false;
 }
 
+async function fetchOnlinePlayers(): Promise<OnlinePlayer[]> {
+	const response = await fetch(ONLINE_PLAYERS_URL);
+
+	if (!response.ok) {
+		throw new Error(`在线玩家接口返回 HTTP ${response.status}`);
+	}
+
+	const data: { players?: OnlinePlayer[] } = await response.json();
+
+	if (!Array.isArray(data.players)) {
+		return [];
+	}
+
+	return data.players;
+}
+
 async function processGroupQuestion(
 	question: GroupQuestion,
 	config: AppConfig,
@@ -60,6 +78,7 @@ async function processGroupQuestion(
 			wikiStore,
 			mediaBaseUrl,
 			logger,
+			fetchOnlinePlayers,
 		});
 	} catch (error) {
 		logger.error("处理群消息失败", {

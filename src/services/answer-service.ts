@@ -20,6 +20,31 @@ export const USAGE_TEXT = "请 @我 并输入你的问题，我会根据知识�
 export const GREETING_TEXT =
 	"你好，我是狼队问答助手。直接 @我 加你的问题就行，我会根据游戏资料回答。";
 
+export const VAGUE_QUESTION_TEXT =
+	"请描述一下具体现象，比如登录时报什么提示、在哪个界面出的问题。";
+
+// 选不到页面时，这类几乎不含信息的提问改成引导用户补充细节
+const VAGUE_QUESTION_KEYWORDS = [
+	"什么情况",
+	"怎么回事",
+	"咋回事",
+	"怎么办",
+	"帮我看",
+	"这是什么",
+	"啥问题",
+];
+
+const VAGUE_QUESTION_STRIP_REGEX = /[?？!！。.、，,\s]/g;
+
+const VAGUE_QUESTION_REST_LENGTH = 2;
+
+// 询问在线情况时直接查接口，避免用静态 Wiki 回答实时数据
+const ONLINE_QUERY_KEYWORDS = ["谁在线", "在线的", "多少人在线", "几个人在", "谁在玩", "在线玩家"];
+
+const ONLINE_QUERY_MAX_LENGTH = 12;
+
+const ROOM_NUMBER_WIDTH = 3;
+
 // 问候与功能询问的关键词，命中后直接回复引导文案，不走知识库检索
 const CHAT_ENTRY_KEYWORDS = [
 	"你好",
@@ -45,6 +70,9 @@ const MAX_SELECTED_PAGES = 3;
 
 // 每条用户消息最多被动回复 5 次：1 次文字 + 最多 4 个媒体
 const MAX_MEDIA_PER_ANSWER = 4;
+
+// 一条消息可能带多张图，识别耗时要控制
+const MAX_IMAGES_PER_QUESTION = 2;
 
 // 资料总字数上限，保证提示词在免费模型的 8K 建议范围内
 const MAX_MATERIAL_CHARS = 6000;
@@ -80,6 +108,16 @@ export interface GroupQuestion {
 	messageId: string;
 	groupOpenid: string;
 	content: string;
+	imageUrls: string[];
+}
+
+export interface OnlinePlayer {
+	name: string;
+	channel: number;
+	room: number;
+	playing: boolean;
+	mode: string | null;
+	map: string | null;
 }
 
 export interface WikiAnswer {
@@ -109,6 +147,7 @@ export interface AnswerDependencies {
 	wikiStore: WikiStore;
 	mediaBaseUrl: string;
 	logger: Logger;
+	fetchOnlinePlayers?: () => Promise<OnlinePlayer[]>;
 }
 
 export function cleanQuestion(content: string): string {
@@ -130,6 +169,70 @@ function isChatEntry(text: string): boolean {
 	}
 
 	return false;
+}
+
+function isVagueQuestion(text: string): boolean {
+	const normalized = text.replace(VAGUE_QUESTION_STRIP_REGEX, "");
+
+	for (const keyword of VAGUE_QUESTION_KEYWORDS) {
+		if (!normalized.includes(keyword)) {
+			continue;
+		}
+
+		// 去掉关键词后几乎不剩内容，说明问题本身没有提供可检索的信息
+		if (normalized.replace(keyword, "").length <= VAGUE_QUESTION_REST_LENGTH) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function isOnlineQuery(text: string): boolean {
+	const normalized = text.trim();
+
+	if (normalized.length > ONLINE_QUERY_MAX_LENGTH) {
+		return false;
+	}
+
+	for (const keyword of ONLINE_QUERY_KEYWORDS) {
+		if (normalized.includes(keyword)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function describePlayerStatus(player: OnlinePlayer): string {
+	if (player.playing) {
+		return "对局中";
+	}
+
+	if (player.room > 0) {
+		return "等待中";
+	}
+
+	return "在线";
+}
+
+function buildOnlineAnswer(players: OnlinePlayer[]): string {
+	if (players.length === 0) {
+		return "当前没有玩家在线。";
+	}
+
+	const lines = [`当前 ${players.length} 人在线：`];
+
+	for (const player of players) {
+		const status = describePlayerStatus(player);
+		const room =
+			player.room > 0
+				? `，房间 ${String(player.room + 1).padStart(ROOM_NUMBER_WIDTH, "0")}`
+				: "";
+		lines.push(`${player.name}（${status}${room}）`);
+	}
+
+	return lines.join("\n");
 }
 
 interface IndexEntry {
@@ -405,13 +508,52 @@ async function sendMedia(
 	}
 }
 
+async function describeImages(imageUrls: string[], deps: AnswerDependencies): Promise<string> {
+	const descriptions: string[] = [];
+
+	let imageCount = 0;
+
+	for (const imageUrl of imageUrls) {
+		if (imageCount >= MAX_IMAGES_PER_QUESTION) {
+			break;
+		}
+
+		imageCount += 1;
+
+		try {
+			const description = await deps.chatClient.describeImage(imageUrl);
+			descriptions.push(description.trim());
+		} catch (error) {
+			deps.logger.warn("识别图片失败，跳过该图片", { error: describeError(error) });
+		}
+	}
+
+	if (descriptions.length === 0) {
+		return "";
+	}
+
+	return `图片内容：${descriptions.join("；")}`;
+}
+
+function buildSearchableQuestion(questionText: string, imageSummary: string): string {
+	if (imageSummary === "") {
+		return questionText;
+	}
+
+	if (questionText === "") {
+		return imageSummary;
+	}
+
+	return `${questionText}\n${imageSummary}`;
+}
+
 export async function replyGroupQuestion(
 	question: GroupQuestion,
 	deps: AnswerDependencies,
 ): Promise<void> {
 	const questionText = cleanQuestion(question.content);
 
-	if (questionText === "") {
+	if (questionText === "" && question.imageUrls.length === 0) {
 		await deps.replier.sendGroupText(
 			question.groupOpenid,
 			question.messageId,
@@ -422,7 +564,7 @@ export async function replyGroupQuestion(
 		return;
 	}
 
-	if (isChatEntry(questionText)) {
+	if (question.imageUrls.length === 0 && isChatEntry(questionText)) {
 		await deps.replier.sendGroupText(
 			question.groupOpenid,
 			question.messageId,
@@ -433,10 +575,45 @@ export async function replyGroupQuestion(
 		return;
 	}
 
+	const imageSummary = await describeImages(question.imageUrls, deps);
+	const searchableQuestion = buildSearchableQuestion(questionText, imageSummary);
+
+	if (searchableQuestion === "") {
+		await deps.replier.sendGroupText(
+			question.groupOpenid,
+			question.messageId,
+			FIRST_MSG_SEQ,
+			USAGE_TEXT,
+		);
+
+		return;
+	}
+
+	if (isOnlineQuery(questionText) && deps.fetchOnlinePlayers !== undefined) {
+		let players: OnlinePlayer[] | null = null;
+
+		try {
+			players = await deps.fetchOnlinePlayers();
+		} catch (error) {
+			deps.logger.warn("查询在线玩家失败", { error: describeError(error) });
+		}
+
+		if (players !== null) {
+			await deps.replier.sendGroupText(
+				question.groupOpenid,
+				question.messageId,
+				FIRST_MSG_SEQ,
+				buildOnlineAnswer(players),
+			);
+
+			return;
+		}
+	}
+
 	let answer: WikiAnswer | null;
 
 	try {
-		answer = await generateWikiAnswer(questionText, deps.chatClient, deps.wikiStore);
+		answer = await generateWikiAnswer(searchableQuestion, deps.chatClient, deps.wikiStore);
 	} catch (error) {
 		deps.logger.error("生成回答失败", {
 			messageId: question.messageId,
@@ -453,6 +630,17 @@ export async function replyGroupQuestion(
 	}
 
 	if (answer === null) {
+		if (isVagueQuestion(questionText)) {
+			await deps.replier.sendGroupText(
+				question.groupOpenid,
+				question.messageId,
+				FIRST_MSG_SEQ,
+				VAGUE_QUESTION_TEXT,
+			);
+
+			return;
+		}
+
 		deps.logger.info("问题不在知识库范围内", { messageId: question.messageId });
 		await deps.replier.sendGroupText(
 			question.groupOpenid,

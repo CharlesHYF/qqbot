@@ -169,8 +169,36 @@ describe("handleWebhookRequest", () => {
 				messageId: "msg-1",
 				groupOpenid: "group-1",
 				content: " 怎么手冲",
+				imageUrls: [],
 			},
 		]);
+	});
+
+	it("群 @ 消息带图片时解析出图片地址", async () => {
+		const questions: GroupQuestion[] = [];
+		const body = JSON.stringify({
+			op: 0,
+			t: "GROUP_AT_MESSAGE_CREATE",
+			d: {
+				id: "msg-2",
+				group_openid: "group-1",
+				content: "什么情况",
+				attachments: [
+					{
+						content_type: "image/png",
+						url: "https://multimedia.nt.qq.com.cn/a.png",
+					},
+					{
+						content_type: "file/zip",
+						url: "https://example.com/b.zip",
+					},
+				],
+			},
+		});
+
+		await handleWebhookRequest(await buildSignedRequest(body), createOptions(questions));
+
+		expect(questions[0].imageUrls).toEqual(["https://multimedia.nt.qq.com.cn/a.png"]);
 	});
 
 	it("群消息缺少 group_openid 时只返回 ACK", async () => {

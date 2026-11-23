@@ -99,6 +99,37 @@ async function buildValidationResponse(
 	});
 }
 
+function readImageUrls(data: Record<string, unknown>): string[] {
+	const attachments = data["attachments"];
+
+	if (!Array.isArray(attachments)) {
+		return [];
+	}
+
+	const imageUrls: string[] = [];
+
+	for (const attachment of attachments) {
+		if (typeof attachment !== "object" || attachment === null) {
+			continue;
+		}
+
+		const record = attachment as Record<string, unknown>;
+		const url = record["url"];
+		const contentType = record["content_type"];
+
+		if (
+			typeof url === "string" &&
+			url !== "" &&
+			typeof contentType === "string" &&
+			contentType.startsWith("image/")
+		) {
+			imageUrls.push(url);
+		}
+	}
+
+	return imageUrls;
+}
+
 function readGroupQuestion(data: Record<string, unknown>): GroupQuestion | null {
 	const messageId = readText(data, "id");
 	const groupOpenid = readText(data, "group_openid");
@@ -111,6 +142,7 @@ function readGroupQuestion(data: Record<string, unknown>): GroupQuestion | null 
 		messageId,
 		groupOpenid,
 		content: readText(data, "content"),
+		imageUrls: readImageUrls(data),
 	};
 }
 

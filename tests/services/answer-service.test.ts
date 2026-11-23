@@ -18,6 +18,7 @@ import {
 	REFUSAL_TEXT,
 	replyGroupQuestion,
 	USAGE_TEXT,
+	VAGUE_QUESTION_TEXT,
 } from "../../src/services/answer-service";
 import { createWikiStore } from "../../src/wiki/wiki-store";
 
@@ -47,6 +48,8 @@ class FakeReplier implements GroupReplier {
 
 	failingUploadUrls = new Set<string>();
 
+	failingText = false;
+
 	sendGroupText(
 		_groupOpenid: string,
 		_replyToMessageId: string,
@@ -54,6 +57,10 @@ class FakeReplier implements GroupReplier {
 		content: string,
 	): Promise<void> {
 		this.calls.push({ kind: "text", msgSeq, content });
+
+		if (this.failingText) {
+			return Promise.reject(new Error("发送失败"));
+		}
 
 		return Promise.resolve();
 	}
@@ -87,10 +94,15 @@ class FakeReplier implements GroupReplier {
 class FakeChatClient implements ChatClient {
 	readonly requests: ChatMessage[][] = [];
 
+	readonly imageRequests: string[] = [];
+
 	private readonly replies: (string | Error)[];
 
-	constructor(replies: (string | Error)[]) {
+	private readonly imageReply: string | Error;
+
+	constructor(replies: (string | Error)[], imageReply: string | Error = "") {
 		this.replies = replies;
+		this.imageReply = imageReply;
 	}
 
 	chat(messages: ChatMessage[]): Promise<string> {
@@ -102,6 +114,16 @@ class FakeChatClient implements ChatClient {
 		}
 
 		return Promise.resolve(reply ?? "");
+	}
+
+	describeImage(imageUrl: string): Promise<string> {
+		this.imageRequests.push(imageUrl);
+
+		if (this.imageReply instanceof Error) {
+			return Promise.reject(this.imageReply);
+		}
+
+		return Promise.resolve(this.imageReply);
 	}
 }
 
@@ -117,6 +139,7 @@ const QUESTION = {
 	messageId: "msg-1",
 	groupOpenid: "group-1",
 	content: " 粉水比是多少",
+	imageUrls: [],
 };
 
 function buildDeps(chatClient: ChatClient, replier: GroupReplier) {
@@ -312,6 +335,135 @@ describe("replyGroupQuestion", () => {
 		await replyGroupQuestion(QUESTION, buildDeps(chatClient, replier));
 
 		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: REFUSAL_TEXT }]);
+	});
+
+	it("模糊短问题选不到页面时回复引导文案", async () => {
+		const chatClient = new FakeChatClient(["NONE"]);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "什么情况" },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: VAGUE_QUESTION_TEXT }]);
+	});
+
+	it("带图片时先识别图片并把内容并入检索问题", async () => {
+		const chatClient = new FakeChatClient(
+			["basics.md", "粉水比 1:15。"],
+			"图片是一个登录错误弹窗，提示不合格的账号",
+		);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "什么情况", imageUrls: ["https://example.com/a.png"] },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(chatClient.imageRequests).toEqual(["https://example.com/a.png"]);
+		expect(chatClient.requests[0][1].content).toContain("图片内容：图片是一个登录错误弹窗");
+	});
+
+	it("图片识别失败时只用文字检索", async () => {
+		const chatClient = new FakeChatClient(["NONE"], new Error("识别失败"));
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "什么情况", imageUrls: ["https://example.com/a.png"] },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(chatClient.requests[0][1].content).toBe("什么情况");
+	});
+
+	it("询问在线玩家时直接查询接口并回复名单", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+		const deps = {
+			...buildDeps(chatClient, replier),
+			fetchOnlinePlayers: () =>
+				Promise.resolve([
+					{
+						name: "威不可挡",
+						channel: 0,
+						room: 67,
+						playing: true,
+						mode: "团队 · 人 vs 人",
+						map: "屋顶",
+					},
+					{
+						name: "aacer00",
+						channel: 0,
+						room: 0,
+						playing: false,
+						mode: null,
+						map: null,
+					},
+				]),
+		};
+
+		await replyGroupQuestion({ ...QUESTION, content: "现在谁在线" }, deps);
+
+		expect(chatClient.requests).toHaveLength(0);
+		expect(replier.calls).toEqual([
+			{
+				kind: "text",
+				msgSeq: 1,
+				content: "当前 2 人在线：\n威不可挡（对局中，房间 068）\naacer00（在线）",
+			},
+		]);
+	});
+
+	it("没有玩家在线时直接说明", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+		const deps = {
+			...buildDeps(chatClient, replier),
+			fetchOnlinePlayers: () => Promise.resolve([]),
+		};
+
+		await replyGroupQuestion({ ...QUESTION, content: "在线玩家" }, deps);
+
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: "当前没有玩家在线。" }]);
+	});
+
+	it("在线查询失败时降级到知识库", async () => {
+		const chatClient = new FakeChatClient(["NONE"]);
+		const replier = new FakeReplier();
+		const deps = {
+			...buildDeps(chatClient, replier),
+			fetchOnlinePlayers: () => Promise.reject(new Error("接口超时")),
+		};
+
+		await replyGroupQuestion({ ...QUESTION, content: "谁在线" }, deps);
+
+		expect(chatClient.requests).toHaveLength(1);
+	});
+
+	it("在线名单发送失败时向上抛出，不被当成查询失败", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+		replier.failingText = true;
+		const deps = {
+			...buildDeps(chatClient, replier),
+			fetchOnlinePlayers: () =>
+				Promise.resolve([
+					{
+						name: "aacer00",
+						channel: 0,
+						room: 0,
+						playing: false,
+						mode: null,
+						map: null,
+					},
+				]),
+		};
+
+		await expect(
+			replyGroupQuestion({ ...QUESTION, content: "现在谁在线" }, deps),
+		).rejects.toThrow("发送失败");
+		expect(chatClient.requests).toHaveLength(0);
 	});
 
 	it("模型调用失败时回复失败提示", async () => {
