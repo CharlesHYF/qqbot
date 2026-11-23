@@ -17,6 +17,28 @@ export const FAILURE_TEXT = "暂时无法回答，请稍后再试。";
 
 export const USAGE_TEXT = "请 @我 并输入你的问题，我会根据知识库内容回答。";
 
+export const GREETING_TEXT =
+	"你好，我是狼队问答助手。直接 @我 加你的问题就行，我会根据游戏资料回答。";
+
+// 问候与功能询问的关键词，命中后直接回复引导文案，不走知识库检索
+const CHAT_ENTRY_KEYWORDS = [
+	"你好",
+	"您好",
+	"hi",
+	"hello",
+	"在吗",
+	"在么",
+	"能做什么",
+	"会什么",
+	"怎么用",
+	"怎么问",
+	"有什么功能",
+	"帮助",
+	"help",
+];
+
+const CHAT_ENTRY_MAX_LENGTH = 10;
+
 const NO_ANSWER_MARK = "NONE";
 
 const MAX_SELECTED_PAGES = 3;
@@ -29,9 +51,20 @@ const MAX_MATERIAL_CHARS = 6000;
 
 const FIRST_MSG_SEQ = 1;
 
-const PAGE_NAME_REGEX = /[^\s`'"*\-:：、，,()（）[\]]+\.md/g;
+// 页面文件名可能含连字符，字符类只排除空白与 Markdown 装饰符号
+const PAGE_NAME_REGEX = /[^\s`'"*:：、，,()（）[\]]+\.md/g;
+
+const INDEX_ENTRY_REGEX = /^\s*-\s*\[([^\]]*)\]\(([^)\s]+)\)\s*(?:--\s*(.*))?$/;
+
+const MARKDOWN_EXTENSION_REGEX = /\.md$/i;
 
 const MEDIA_MARK_REGEX = /\[\[media:([^\]\n]+)\]\]/g;
+
+// 资料里的图片与视频引用，送给模型前剥掉，避免模型照抄路径
+const MEDIA_REFERENCE_REGEX = /!?\[[^\]]*\]\([^)]*(?:\.(?:png|jpe?g|gif|webp|mp4)|\/media\/)[^)]*\)/gi;
+
+// 模型输出里指向媒体的 Markdown 链接，需要提取文件名并从文本去掉
+const MEDIA_LINK_REGEX = /!?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
 const MARKDOWN_IMAGE_REGEX = /!\[[^\]]*\]\([^)]*\)/g;
 
@@ -82,18 +115,73 @@ export function cleanQuestion(content: string): string {
 	return content.replace(MENTION_REGEX, "").trim();
 }
 
+function isChatEntry(text: string): boolean {
+	const normalized = text.toLowerCase().trim();
+
+	for (const keyword of CHAT_ENTRY_KEYWORDS) {
+		if (normalized === keyword) {
+			return true;
+		}
+
+		// 只在很短的句子里做包含判断，避免把正常提问误判成问候
+		if (normalized.length <= CHAT_ENTRY_MAX_LENGTH && normalized.includes(keyword)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+interface IndexEntry {
+	title: string;
+	pageName: string;
+	summary: string;
+}
+
+function parseIndexEntries(index: string): IndexEntry[] {
+	const entries: IndexEntry[] = [];
+
+	for (const line of index.split("\n")) {
+		const match = INDEX_ENTRY_REGEX.exec(line);
+
+		if (match === null) {
+			continue;
+		}
+
+		entries.push({
+			title: match[1].trim(),
+			pageName: match[2].trim(),
+			summary: (match[3] ?? "").trim(),
+		});
+	}
+
+	return entries;
+}
+
+// 目录改成 文件名: 摘要 的形式，避免模型把方括号里的页面标题当成文件名
+export function buildIndexListing(index: string): string {
+	const entries = parseIndexEntries(index);
+	const lines: string[] = [];
+
+	for (const entry of entries) {
+		lines.push(entry.summary === "" ? entry.pageName : `${entry.pageName}: ${entry.summary}`);
+	}
+
+	return lines.length > 0 ? lines.join("\n") : index;
+}
+
 export function buildPageSelectionMessages(index: string, question: string): ChatMessage[] {
 	return [
 		{
 			role: "system",
 			content: [
-				"你是知识库检索助手。下面是知识库页面目录，每行包含页面文件名和一句摘要。",
+				"你是知识库检索助手。下面是知识库页面清单，每行是 页面文件名: 摘要 的格式。",
 				`根据用户问题选出回答它需要阅读的页面，最多 ${MAX_SELECTED_PAGES} 个。`,
-				"只输出页面文件名，每行一个，不要输出其他内容。",
+				"只输出冒号前的页面文件名，每行一个，不要输出摘要或其他内容。",
 				`没有任何相关页面时只输出 ${NO_ANSWER_MARK}。`,
 				"",
-				"页面目录：",
-				index,
+				"页面清单：",
+				buildIndexListing(index),
 			].join("\n"),
 		},
 
@@ -105,13 +193,34 @@ export function buildPageSelectionMessages(index: string, question: string): Cha
 }
 
 export function parsePageSelection(rawReply: string, wikiStore: WikiStore): string[] {
+	const titleToPageName = new Map<string, string>();
+
+	for (const entry of parseIndexEntries(wikiStore.getIndex())) {
+		if (entry.title !== "" && entry.pageName !== "") {
+			titleToPageName.set(entry.title.toLowerCase(), entry.pageName);
+		}
+	}
+
 	const pageNames: string[] = [];
 
 	for (const match of rawReply.matchAll(PAGE_NAME_REGEX)) {
-		const pageName = match[0];
-
 		if (pageNames.length >= MAX_SELECTED_PAGES) {
 			break;
+		}
+
+		let pageName = match[0];
+
+		if (!wikiStore.isContentPage(pageName)) {
+			// 模型偶尔输出页面标题，按索引映射回文件名
+			const mappedPageName = titleToPageName.get(
+				pageName.replace(MARKDOWN_EXTENSION_REGEX, "").toLowerCase(),
+			);
+
+			if (mappedPageName === undefined) {
+				continue;
+			}
+
+			pageName = mappedPageName;
 		}
 
 		if (wikiStore.isContentPage(pageName) && !pageNames.includes(pageName)) {
@@ -127,7 +236,8 @@ export function buildMaterial(pageNames: string[], wikiStore: WikiStore): string
 
 	for (const pageName of pageNames) {
 		const content = wikiStore.getPage(pageName) ?? "";
-		const section = `=== ${pageName} ===\n${content.trim()}\n\n`;
+		const cleanedContent = content.replace(MEDIA_REFERENCE_REGEX, "");
+		const section = `=== ${pageName} ===\n${cleanedContent.trim()}\n\n`;
 		const remainingChars = MAX_MATERIAL_CHARS - material.length;
 
 		if (remainingChars <= 0) {
@@ -174,26 +284,42 @@ export function buildAnswerMessages(
 	];
 }
 
+function addMediaFile(
+	mediaFiles: string[],
+	fileName: string,
+	allowedMediaFiles: string[],
+): void {
+	if (mediaFiles.length >= MAX_MEDIA_PER_ANSWER || mediaFiles.includes(fileName)) {
+		return;
+	}
+
+	if (allowedMediaFiles.includes(fileName)) {
+		mediaFiles.push(fileName);
+	}
+}
+
 export function parseAnswer(rawReply: string, allowedMediaFiles: string[]): WikiAnswer | null {
 	const mediaFiles: string[] = [];
 
-	for (const match of rawReply.matchAll(MEDIA_MARK_REGEX)) {
-		const fileName = match[1].trim();
+	let text = rawReply.replace(MEDIA_MARK_REGEX, (_marker: string, fileName: string) => {
+		addMediaFile(mediaFiles, fileName.trim(), allowedMediaFiles);
 
-		if (mediaFiles.length >= MAX_MEDIA_PER_ANSWER) {
-			break;
+		return "";
+	});
+
+	text = text.replace(MEDIA_LINK_REGEX, (fullMatch: string, target: string) => {
+		const fileName = decodeURIComponent((target.split("/").pop() ?? "").trim());
+
+		if (!allowedMediaFiles.includes(fileName)) {
+			return fullMatch;
 		}
 
-		if (allowedMediaFiles.includes(fileName) && !mediaFiles.includes(fileName)) {
-			mediaFiles.push(fileName);
-		}
-	}
+		addMediaFile(mediaFiles, fileName, allowedMediaFiles);
 
-	const text = rawReply
-		.replace(MEDIA_MARK_REGEX, "")
-		.replace(MARKDOWN_IMAGE_REGEX, "")
-		.replace(EXTRA_BLANK_LINES_REGEX, "\n\n")
-		.trim();
+		return "";
+	});
+
+	text = text.replace(MARKDOWN_IMAGE_REGEX, "").replace(EXTRA_BLANK_LINES_REGEX, "\n\n").trim();
 
 	if (text === "" || text === NO_ANSWER_MARK) {
 		return null;
@@ -291,6 +417,17 @@ export async function replyGroupQuestion(
 			question.messageId,
 			FIRST_MSG_SEQ,
 			USAGE_TEXT,
+		);
+
+		return;
+	}
+
+	if (isChatEntry(questionText)) {
+		await deps.replier.sendGroupText(
+			question.groupOpenid,
+			question.messageId,
+			FIRST_MSG_SEQ,
+			GREETING_TEXT,
 		);
 
 		return;

@@ -7,10 +7,12 @@ import { describe, expect, it } from "vitest";
 
 import { LlmRequestError } from "../../src/errors";
 import {
+	buildIndexListing,
 	buildMaterial,
 	cleanQuestion,
 	FAILURE_TEXT,
 	getMediaFileType,
+	GREETING_TEXT,
 	parseAnswer,
 	parsePageSelection,
 	REFUSAL_TEXT,
@@ -143,6 +145,34 @@ describe("parsePageSelection", () => {
 	it("模型回复 NONE 时返回空列表", () => {
 		expect(parsePageSelection("NONE", wikiStore)).toEqual([]);
 	});
+
+	it("模型输出页面标题时按索引映射回文件名", () => {
+		expect(parsePageSelection("基础.md", wikiStore)).toEqual(["basics.md"]);
+	});
+
+	it("文件名含连字符时能完整匹配", () => {
+		const hyphenStore = createWikiStore(
+			{
+				"index.md": "- [手冲咖啡基础](pour-over-basics.md) -- 冲煮参数",
+				"pour-over-basics.md": "粉水比 1:15。",
+			},
+			[],
+		);
+
+		expect(parsePageSelection("pour-over-basics.md", hyphenStore)).toEqual([
+			"pour-over-basics.md",
+		]);
+	});
+});
+
+describe("buildIndexListing", () => {
+	it("把目录链接改成文件名加摘要", () => {
+		expect(buildIndexListing(PAGES["index.md"])).toBe("basics.md: 冲煮参数\nequipment.md: 器具清单");
+	});
+
+	it("目录无法解析时原样返回", () => {
+		expect(buildIndexListing("没有条目")).toBe("没有条目");
+	});
 });
 
 describe("buildMaterial", () => {
@@ -160,6 +190,12 @@ describe("buildMaterial", () => {
 		);
 
 		expect(buildMaterial(["a.md", "b.md"], longStore).length).toBeLessThanOrEqual(6000);
+	});
+
+	it("资料中不含媒体链接语法", () => {
+		const material = buildMaterial(["basics.md"], wikiStore);
+
+		expect(material).not.toContain("../media/");
 	});
 });
 
@@ -192,6 +228,24 @@ describe("parseAnswer", () => {
 			"4.png",
 		]);
 	});
+
+	it("模型照抄资料里的媒体链接时提取媒体并去掉链接", () => {
+		const answer = parseAnswer(
+			"步骤见图：\n![冲煮步骤示意图](../media/steps.png)\n[注水演示视频](../media/demo.mp4)",
+			["steps.png", "demo.mp4"],
+		);
+
+		expect(answer).toEqual({
+			text: "步骤见图：",
+			mediaFiles: ["steps.png", "demo.mp4"],
+		});
+	});
+
+	it("非媒体的 Markdown 链接保留在文本中", () => {
+		const answer = parseAnswer("见 [口味问题排查](taste-troubleshooting.md)", []);
+
+		expect(answer?.text).toBe("见 [口味问题排查](taste-troubleshooting.md)");
+	});
 });
 
 describe("getMediaFileType", () => {
@@ -204,6 +258,29 @@ describe("getMediaFileType", () => {
 });
 
 describe("replyGroupQuestion", () => {
+	it("问候语直接回复引导文案且不调用模型", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion({ ...QUESTION, content: "你好" }, buildDeps(chatClient, replier));
+
+		expect(chatClient.requests).toHaveLength(0);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: GREETING_TEXT }]);
+	});
+
+	it("询问功能时直接回复引导文案且不调用模型", async () => {
+		const chatClient = new FakeChatClient([]);
+		const replier = new FakeReplier();
+
+		await replyGroupQuestion(
+			{ ...QUESTION, content: "你能做什么" },
+			buildDeps(chatClient, replier),
+		);
+
+		expect(chatClient.requests).toHaveLength(0);
+		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: GREETING_TEXT }]);
+	});
+
 	it("问题为空时回复使用说明且不调用模型", async () => {
 		const chatClient = new FakeChatClient([]);
 		const replier = new FakeReplier();
@@ -224,7 +301,7 @@ describe("replyGroupQuestion", () => {
 		);
 
 		expect(chatClient.requests).toHaveLength(1);
-		expect(chatClient.requests[0][0].content).toContain("- [基础](basics.md)");
+		expect(chatClient.requests[0][0].content).toContain("basics.md: 冲煮参数");
 		expect(replier.calls).toEqual([{ kind: "text", msgSeq: 1, content: REFUSAL_TEXT }]);
 	});
 
